@@ -2,7 +2,8 @@
 // CONFIGURACIÓN PRINCIPAL
 // ==========================================
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8667524847:AAE3ePpmFuuEER3SCxU2zluaWSP44ZWY7sU";
-const CHAT_ID = process.env.CHAT_ID || "-5358695172";
+const GROUP_CHAT_ID = process.env.CHAT_ID || "-5358695172";
+const PRIVATE_CHAT_ID = "5597517412"; // Tu chat privado para confirmación técnica
 const PORT = process.env.PORT || 3000;
 
 const express = require('express');
@@ -17,14 +18,14 @@ const CONFIG = {
     checkIntervalMinutes: 2
 };
 
-async function enviarAlertaTelegram(mensaje) {
+async function enviarMensajeTelegram(chatId, mensaje) {
     const url = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
     try {
         const respuesta = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                chat_id: CHAT_ID, 
+                chat_id: chatId, 
                 text: mensaje, 
                 parse_mode: 'Markdown' 
             })
@@ -150,19 +151,21 @@ function evaluarToken(tokenData) {
 }
 
 async function enviarMensajesArranque() {
-    console.log("🚀 Enviando saludos de arranque al grupo...");
+    console.log("🚀 Enviando mensaje unificado de arranque...");
 
-    const saludoIngles = 
-        `🚀 *System Online!* \n\n` +
-        `Hey guys, your Solana Sniper Bot is officially locked, loaded, and ready to print some money! Let's get it! 💸🔥`;
+    // Un solo mensaje bilingüe (Inglés y Español) para el grupo
+    const mensajeGrupo = 
+        `🚀 *System Online! / ¡Sistema Online!* \n\n` +
+        `🇬🇧 Hey guys, your Solana Sniper Bot is officially locked, loaded, and ready to print some money! Let's get it! 💸🔥\n\n` +
+        `🇪🇸 ¡Ey chicos, vuestro bot francotirador de Solana ya está activo, preparado y listo para hacernos ganar dinero! ¡A por todas! 💸🔥`;
 
-    const saludoEspanol = 
-        `🚀 *¡Sistema Online!* \n\n` +
-        `¡Ey chicos, vuestro bot francotirador de Solana ya está activo, preparado y listo para hacernos ganar dinero! ¡A por todas! 💸🔥`;
+    await enviarMensajeTelegram(GROUP_CHAT_ID, mensajeGrupo);
 
-    await enviarAlertaTelegram(saludoIngles);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    await enviarAlertaTelegram(saludoEspanol);
+    // Notificación privada para ti confirmando que funciona correctamente
+    const mensajePrivado = 
+        `⚙️ *Bot Status:* El bot se ha desplegado y está funcionando correctamente en el grupo \`${GROUP_CHAT_ID}\`.`;
+    
+    await enviarMensajeTelegram(PRIVATE_CHAT_ID, mensajePrivado);
 }
 
 async function escanearMercadoSolana() {
@@ -226,7 +229,7 @@ async function escanearMercadoSolana() {
                         `🔗 *Quick Links:*\n` +
                         `[DexScreener](${tokenUrl}) | [GMGN.ai](https://gmgn.ai/sol/token/${mintAddress})`;
 
-                    await enviarAlertaTelegram(mensaje);
+                    await enviarMensajeTelegram(GROUP_CHAT_ID, mensaje);
                 } else {
                     console.log(`🚫 Token discarded (${tokenPump.baseToken.symbol}): ${evalResult.motivo}`);
                 }
