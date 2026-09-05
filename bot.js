@@ -15,7 +15,8 @@ app.get('/', (req, res) => {
 
 const CONFIG = {
     minScoreToSend: 55,
-    checkIntervalMinutes: 2
+    checkIntervalMinutes: 2,
+    heartbeatIntervalHours: 5 // Envía un "estoy vivo" cada 5 horas al privado para certificar que no está caído
 };
 
 async function enviarMensajeTelegram(chatId, mensaje) {
@@ -67,13 +68,13 @@ function evaluarToken(tokenData) {
         devHoldingPercentage: tokenData.devHold || 1,   
         isMigratedOrNear: tokenData.migratedOrNear || false, 
         maxWalletHolding: tokenData.maxWallet || 2.5,   
-        freshWalletsInTop10: tokenData.freshWalletsInTop10 || 1, // Max 3 fresh wallets in Top 10
+        freshWalletsInTop10: tokenData.freshWalletsInTop10 || 1, 
         totalHolders: tokenData.totalHolders || 120,          
         top10HoldPercentage: tokenData.top10Hold || 22,        
         tokenAgeDays: edadDias,                  
         tokenAgeMinutes: tokenData.ageMinutes || 4,            
-        lpBurnedPercentage: tokenData.lpBurned || 0,           // Mandatory 100%
-        marketCap: tokenData.marketCap || 10000,               // Market Cap in USD
+        lpBurnedPercentage: tokenData.lpBurned || 0,           
+        marketCap: tokenData.marketCap || 10000,               
         hasIdenticalTxVolumes: tokenData.identicalTxVolumes || false, 
         hasSocials: tokenData.hasSocials || false,             
         twitterFollowersCount: tokenData.twitterFollowers || 0 
@@ -153,19 +154,26 @@ function evaluarToken(tokenData) {
 async function enviarMensajesArranque() {
     console.log("🚀 Enviando mensaje unificado de arranque...");
 
-    // Un solo mensaje bilingüe (Inglés y Español) para el grupo
+    // Un solo mensaje bilingüe para el grupo
     const mensajeGrupo = 
         `🚀 *System Online! / ¡Sistema Online!* \n\n` +
-        `🇬🇧 Hey Sam and Aaron, your Solana Bot is officially locked, loaded, and ready to print some money! Let's get it! 💸🔥\n\n` +
-        `🇪🇸 ¡Ey Sam y Aaron, vuestro bot de Solana ya está activo, preparado y listo para hacernos ganar dinero! ¡A por todas! 💸🔥`;
+        `🇬🇧 Hey guys, your Solana Sniper Bot is officially locked, loaded, and ready to print some money! Let's get it! 💸🔥\n\n` +
+        `🇪🇸 ¡Ey chicos, vuestro bot francotirador de Solana ya está activo, preparado y listo para hacernos ganar dinero! ¡A por todas! 💸🔥`;
 
     await enviarMensajeTelegram(GROUP_CHAT_ID, mensajeGrupo);
 
-    // Notificación privada para ti confirmando que funciona correctamente
+    // Notificación privada inicial
     const mensajePrivado = 
-        `⚙️ *Bot Status:* El bot se ha desplegado y está funcionando correctamente en el grupo \`${GROUP_CHAT_ID}\`.`;
+        `⚙️ *Bot Status:* El bot se ha desplegado correctamente. Recibirás un informe de latido cada 5 horas para confirmar que sigue operativo.`;
     
     await enviarMensajeTelegram(PRIVATE_CHAT_ID, mensajePrivado);
+}
+
+// Función de control de latido (Heartbeat) cada 5 horas
+async function enviarLatidoOnline() {
+    const horaActual = new Date().toUTCString();
+    const mensajeLatido = `🟢 *HEARTBEAT - Bot Online*\nEl bot sigue escaneando el mercado correctamente.\n⏱ UTC: \`${horaActual}\``;
+    await enviarMensajeTelegram(PRIVATE_CHAT_ID, mensajeLatido);
 }
 
 async function escanearMercadoSolana() {
@@ -240,12 +248,17 @@ async function escanearMercadoSolana() {
     }
 }
 
-// Iniciar servidor web para Render y bucle de escaneo
+// Iniciar servidor web para Render y bucles de control
 app.listen(PORT, async () => {
     console.log(`🌐 Web server listening on port ${PORT}`);
     console.log(`🤖 Bot configured. Minimum score: ${CONFIG.minScoreToSend}/100`);
     
+    // Enviar saludo bilingüe al grupo y confirmación privada
     await enviarMensajesArranque();
     
+    // Bucle de escaneo de mercado cada 2 minutos
     setInterval(escanearMercadoSolana, CONFIG.checkIntervalMinutes * 60 * 1000);
+    
+    // Bucle de latido (Heartbeat) cada 5 horas para verificar que sigue vivo en tu privado
+    setInterval(enviarLatidoOnline, CONFIG.heartbeatIntervalHours * 60 * 60 * 1000);
 });
