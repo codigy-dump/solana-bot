@@ -156,8 +156,8 @@ async function enviarMensajesArranque() {
     // Un solo mensaje bilingüe (Inglés y Español) para el grupo
     const mensajeGrupo = 
         `🚀 *System Online! / ¡Sistema Online!* \n\n` +
-        `🇬🇧 Hey guys, your Solana Sniper Bot is officially locked, loaded, and ready to print some money! Let's get it! 💸🔥\n\n` +
-        `🇪🇸 ¡Ey chicos, vuestro bot francotirador de Solana ya está activo, preparado y listo para hacernos ganar dinero! ¡A por todas! 💸🔥`;
+        `🇬🇧 Hey Sam and Aaron, your Solana Bot is officially locked, loaded, and ready to print some money! Let's get it! 💸🔥\n\n` +
+        `🇪🇸 ¡Ey Sam y Aaron, vuestro bot de Solana ya está activo, preparado y listo para hacernos ganar dinero! ¡A por todas! 💸🔥`;
 
     await enviarMensajeTelegram(GROUP_CHAT_ID, mensajeGrupo);
 
