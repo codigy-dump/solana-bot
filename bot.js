@@ -3,6 +3,14 @@
 // ==========================================
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8667524847:AAE3ePpmFuuEER3SCxU2zluaWSP44ZWY7sU";
 const CHAT_ID = process.env.CHAT_ID || "5597517412";
+const PORT = process.env.PORT || 3000;
+
+const express = require('express');
+const app = express();
+
+app.get('/', (req, res) => {
+    res.send('🤖 Bot de Solana operando correctamente 24/7.');
+});
 
 const CONFIG = {
     minScoreToSend: 55,
@@ -56,7 +64,7 @@ function evaluarToken(tokenData) {
     const metrics = {
         botVolumePercentage: tokenData.botVolume || 20, 
         devHoldingPercentage: tokenData.devHold || 1,   
-        isMigratedOrNear: tokenData.migratedOrNear || false, // True si es migrado o a punto de migrar
+        isMigratedOrNear: tokenData.migratedOrNear || false, 
         maxWalletHolding: tokenData.maxWallet || 2.5,   
         freshWalletsPercentage: tokenData.freshWallets || 4, 
         totalHolders: tokenData.totalHolders || 120,          
@@ -64,7 +72,6 @@ function evaluarToken(tokenData) {
         tokenAgeDays: edadDias,                  
         tokenAgeMinutes: tokenData.ageMinutes || 4,            
         lpBurnedPercentage: tokenData.lpBurned || 0,           // Obligatorio 100%
-        lpUsdValue: tokenData.lpUsdValue || 0,                 
         marketCap: tokenData.marketCap || 10000,               // Market Cap en USD
         hasIdenticalTxVolumes: tokenData.identicalTxVolumes || false, 
         hasSocials: tokenData.hasSocials || false,             
@@ -143,7 +150,7 @@ function evaluarToken(tokenData) {
 }
 
 async function forzarAlertaPrueba() {
-    console.log("🧪 Enviando alerta de prueba (Filtros de MC actualizados)...");
+    console.log("🧪 Enviando alerta de prueba...");
     
     const tokenPrueba = {
         name: "PumpFun Token Test",
@@ -200,13 +207,13 @@ async function escanearMercadoSolana() {
                     address: mintAddress,
                     botVolume: 22,       
                     devHold: 0.5,        
-                    migratedOrNear: true,  // Evaluado como migrado o a punto de migrar
+                    migratedOrNear: true,  
                     maxWallet: 2.1,
                     top10Hold: 24,       
                     ageDays: edadDiasCalculada, 
                     ageMinutes: 30,       
                     lpBurned: 100,       
-                    marketCap: marketCapReal, // Validación de Market Cap aplicada
+                    marketCap: marketCapReal, 
                     totalHolders: 120,   
                     freshWallets: 4, 
                     imageDuplicatedWithin8h: false, 
@@ -243,6 +250,10 @@ async function escanearMercadoSolana() {
     }
 }
 
-console.log(`🤖 Bot configurado con MC Mínimo. Umbral mínimo: ${CONFIG.minScoreToSend}/100`);
-forzarAlertaPrueba();
-setInterval(escanearMercadoSolana, CONFIG.checkIntervalMinutes * 60 * 1000);
+// Iniciar servidor web para Render y bucle de escaneo
+app.listen(PORT, () => {
+    console.log(`🌐 Servidor web escuchando en el puerto ${PORT}`);
+    console.log(`🤖 Bot configurado. Umbral mínimo: ${CONFIG.minScoreToSend}/100`);
+    forzarAlertaPrueba();
+    setInterval(escanearMercadoSolana, CONFIG.checkIntervalMinutes * 60 * 1000);
+});
