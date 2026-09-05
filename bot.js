@@ -66,7 +66,7 @@ function evaluarToken(tokenData) {
         devHoldingPercentage: tokenData.devHold || 1,   
         isMigratedOrNear: tokenData.migratedOrNear || false, 
         maxWalletHolding: tokenData.maxWallet || 2.5,   
-        freshWalletsPercentage: tokenData.freshWallets || 4, 
+        freshWalletsInTop10: tokenData.freshWalletsInTop10 || 1, // Máximo 3 fresh wallets en el Top 10
         totalHolders: tokenData.totalHolders || 120,          
         top10HoldPercentage: tokenData.top10Hold || 22,        
         tokenAgeDays: edadDias,                  
@@ -94,9 +94,9 @@ function evaluarToken(tokenData) {
         return { passed: false, score: 0, motivo: `Descartado: Holders insuficientes (${metrics.totalHolders} < 100 mín)` };
     }
 
-    // --- FILTROS OBLIGATORIOS 4: Fresh Wallets máximo 10% del total de holders ---
-    if (metrics.freshWalletsPercentage > 10) {
-        return { passed: false, score: 0, motivo: `Descartado: Exceso de fresh wallets (${metrics.freshWalletsPercentage}% > 10% máx)` };
+    // --- FILTROS OBLIGATORIOS 4: Máximo 3 Fresh Wallets permitidas en el Top 10 ---
+    if (metrics.freshWalletsInTop10 > 3) {
+        return { passed: false, score: 0, motivo: `Descartado: Exceso de fresh wallets en el Top 10 (${metrics.freshWalletsInTop10} > 3 máx)` };
     }
 
     // --- FILTROS OBLIGATORIOS 5: Demasiadas transacciones con volúmenes idénticos (Bots) ---
@@ -164,7 +164,7 @@ async function forzarAlertaPrueba() {
         `📌 *${tokenPrueba.name}* (\`${tokenPrueba.symbol}\`)\n` +
         `📊 *Market Cap:* $35,000 (Mín. $30k para migrados) ✅\n` +
         `🔥 *Liquidez:* 100% Quemada ✅\n` +
-        `👥 *Fresh Wallets:* 4% del total (Máx. 10%) ✅\n\n` +
+        `👥 *Fresh Wallets en Top 10:* 1 / 3 máx ✅\n\n` +
         `📊 *DESGLOSE DE MÉTRICAS:*\n` +
         `• Vol. Bots: \`22%\`\n` +
         `• Top 10% Supply: \`21%\`\n` +
@@ -215,7 +215,7 @@ async function escanearMercadoSolana() {
                     lpBurned: 100,       
                     marketCap: marketCapReal, 
                     totalHolders: 120,   
-                    freshWallets: 4, 
+                    freshWalletsInTop10: 1, // Se evalúa que solo haya 1 fresh wallet en el top 10
                     imageDuplicatedWithin8h: false, 
                     hasIdenticalTxVolumes: false, 
                     hasSocials: true,          
@@ -228,7 +228,7 @@ async function escanearMercadoSolana() {
                         `📌 *${tokenPump.baseToken.name}* (\`${tokenPump.baseToken.symbol}\`)\n` +
                         `📊 *Market Cap:* $${evalResult.metrics.marketCap.toLocaleString()} ✅\n` +
                         `🔥 *Liquidez:* 100% Quemada ✅\n` +
-                        `👥 *Fresh Wallets:* ${evalResult.metrics.freshWalletsPercentage}% del total ✅\n\n` +
+                        `👥 *Fresh Wallets en Top 10:* ${evalResult.metrics.freshWalletsInTop10} / 3 máx ✅\n\n` +
                         `📊 *DESGLOSE DE MÉTRICAS:*\n` +
                         `• Vol. Bots: \`22%\`\n` +
                         `• Top 10% Supply: \`${evalResult.metrics.top10HoldPercentage}%\`\n` +
