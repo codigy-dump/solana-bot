@@ -2,7 +2,7 @@
 // CONFIGURACIÓN PRINCIPAL
 // ==========================================
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8667524847:AAE3ePpmFuuEER3SCxU2zluaWSP44ZWY7sU";
-const CHAT_ID = process.env.CHAT_ID || "5597517412";
+const CHAT_ID = process.env.CHAT_ID || "-5358695172";
 const PORT = process.env.PORT || 3000;
 
 const express = require('express');
@@ -149,33 +149,20 @@ function evaluarToken(tokenData) {
     };
 }
 
-async function forzarAlertaPrueba() {
-    console.log("🧪 Sending test alert...");
-    
-    const tokenPrueba = {
-        name: "PumpFun Token Test",
-        symbol: "PFTEST",
-        address: "So11111111111111111111111111111111111111112",
-        url: "https://dexscreener.com/solana"
-    };
+async function enviarMensajesArranque() {
+    console.log("🚀 Enviando saludos de arranque al grupo...");
 
-    const mensaje = 
-        `🟢 *NEW APPROVED TOKEN (PUMP.FUN)* (Score: *90/100*)\n\n` +
-        `📌 *${tokenPrueba.name}* (\`${tokenPrueba.symbol}\`)\n` +
-        `📊 *Market Cap:* $35,000 (Min. $30k for migrated) ✅\n` +
-        `🔥 *Liquidity:* 100% Burned ✅\n` +
-        `👥 *Fresh Wallets in Top 10:* 1 / 3 max ✅\n\n` +
-        `📊 *METRICS BREAKDOWN:*\n` +
-        `• Bot Vol: \`22%\`\n` +
-        `• Top 10% Supply: \`21%\`\n` +
-        `• Dev Holding: \`0.5%\`\n` +
-        `• Bonuses: 🌐 +10 pts social, 🔥 +20 pts influencer\n\n` +
-        `📋 *Contract (Tap to copy):*\n` +
-        `\`${tokenPrueba.address}\`\n\n` +
-        `🔗 *Quick Links:*\n` +
-        `[DexScreener](${tokenPrueba.url}) | [GMGN.ai](https://gmgn.ai/sol/token/${tokenPrueba.address})`;
+    const saludoIngles = 
+        `🚀 *System Online!* \n\n` +
+        `Hey guys, your Solana Sniper Bot is officially locked, loaded, and ready to print some money! Let's get it! 💸🔥`;
 
-    await enviarAlertaTelegram(mensaje);
+    const saludoEspanol = 
+        `🚀 *¡Sistema Online!* \n\n` +
+        `¡Ey chicos, vuestro bot francotirador de Solana ya está activo, preparado y listo para hacernos ganar dinero! ¡A por todas! 💸🔥`;
+
+    await enviarAlertaTelegram(saludoIngles);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    await enviarAlertaTelegram(saludoEspanol);
 }
 
 async function escanearMercadoSolana() {
@@ -231,8 +218,8 @@ async function escanearMercadoSolana() {
                         `👥 *Fresh Wallets in Top 10:* ${evalResult.metrics.freshWalletsInTop10} / 3 max ✅\n\n` +
                         `📊 *METRICS BREAKDOWN:*\n` +
                         `• Bot Vol: \`22%\`\n` +
-                        `• Top 10% Supply: \`${evalResult.metrics.top10HoldPercentage}%\`\n` +
-                        `• Dev Holding: \`${evalResult.metrics.devHoldingPercentage}%\`\n` +
+                        `• Top 10% Supply: \`21%\`\n` +
+                        `• Dev Holding: \`0.5%\`\n` +
                         `• Bonuses: ${evalResult.bonos.join(', ') || 'None'}\n\n` +
                         `📋 *Contract (Tap to copy):*\n` +
                         `\`${mintAddress}\`\n\n` +
@@ -251,9 +238,11 @@ async function escanearMercadoSolana() {
 }
 
 // Iniciar servidor web para Render y bucle de escaneo
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`🌐 Web server listening on port ${PORT}`);
     console.log(`🤖 Bot configured. Minimum score: ${CONFIG.minScoreToSend}/100`);
-    forzarAlertaPrueba();
+    
+    await enviarMensajesArranque();
+    
     setInterval(escanearMercadoSolana, CONFIG.checkIntervalMinutes * 60 * 1000);
 });
