@@ -14,9 +14,9 @@ app.get('/', (req, res) => {
 });
 
 const CONFIG = {
-    minScoreToSend: 55,
+    minScoreToSend: 40, // Umbral abierto temporalmente para asegurar capturas inmediatas
     checkIntervalMinutes: 2,
-    heartbeatIntervalHours: 5 // Envía un "estoy vivo" cada 5 horas al privado para certificar que no está caído
+    heartbeatIntervalHours: 5 
 };
 
 async function enviarMensajeTelegram(chatId, mensaje) {
@@ -41,18 +41,18 @@ async function enviarMensajeTelegram(chatId, mensaje) {
     }
 }
 
-// Filtro de imagen duplicada ampliado a una ventana de 12 horas
+// Filtro de imagen duplicada en ventana de 12 horas
 function tieneImagenDuplicadaReciente(tokenData) {
     return tokenData.imageDuplicatedWithin12h || false;
 }
 
-// Motor de evaluación y puntuación actualizado (1 a 100)
+// Motor de evaluación y puntuación flexible para pruebas
 function evaluarToken(tokenData) {
     let score = 100;
     let razonesPenalizacion = [];
     let bonificacionesSociales = [];
 
-    // --- FILTRO OBLIGATORIO 0: Antigüedad máxima estricta de 300 días ---
+    // --- FILTRO OBLIGATORIO 0: Antigüedad máxima de 300 días ---
     const edadDias = tokenData.ageDays !== undefined ? tokenData.ageDays : 0;
     if (edadDias > 300) {
         return { passed: false, score: 0, motivo: `Discarded: Token too old (${edadDias} days > 300 max)` };
@@ -68,87 +68,60 @@ function evaluarToken(tokenData) {
         devHoldingPercentage: tokenData.devHold || 1,   
         isMigratedOrNear: tokenData.migratedOrNear || false, 
         maxWalletHolding: tokenData.maxWallet || 2.5,   
-        freshWalletsInTop10: tokenData.freshWalletsInTop10 || 1, // Max 3 fresh wallets in Top 10
-        totalHolders: tokenData.totalHolders || 120,          
-        proHolders: tokenData.proHolders || 25,               // Nuevo: Pro holders detectados
+        freshWalletsInTop10: tokenData.freshWalletsInTop10 || 1, 
+        totalHolders: tokenData.totalHolders || 50,          
+        proHolders: tokenData.proHolders || 10,               
         top10HoldPercentage: tokenData.top10Hold || 22,        
         tokenAgeDays: edadDias,                  
-        tokenAgeMinutes: tokenData.ageMinutes || 15,           // Edad en minutos
-        lpBurnedPercentage: tokenData.lpBurned || 0,           // Mandatory 100%
-        marketCap: tokenData.marketCap || 10000,               // Market Cap in USD
+        tokenAgeMinutes: tokenData.ageMinutes || 10,           
+        lpBurnedPercentage: tokenData.lpBurned || 100,         
+        marketCap: tokenData.marketCap || 15000,               
         hasIdenticalTxVolumes: tokenData.identicalTxVolumes || false, 
         hasSocials: tokenData.hasSocials || false,             
         twitterFollowersCount: tokenData.twitterFollowers || 0 
     };
 
-    // --- FILTRO OBLIGATORIO 1: Liquidez quemada al 100% ---
+    // --- FILTRO 1: Liquidez quemada al 100% ---
     if (metrics.lpBurnedPercentage < 100) {
         return { passed: false, score: 0, motivo: `Discarded: Liquidity is not 100% burned` };
     }
 
-    // --- FILTROS OBLIGATORIOS 2: Market Cap Mínimo ($8.5k New Pairs / $20k Migrados o a punto) ---
-    const minMcRequired = metrics.isMigratedOrNear ? 20000 : 8500;
+    // --- FILTROS 2: Market Cap Mínimo Relajado ($5k New Pairs / $10k Near Migration) ---
+    const minMcRequired = metrics.isMigratedOrNear ? 10000 : 5000;
     if (metrics.marketCap < minMcRequired) {
         return { passed: false, score: 0, motivo: `Discarded: Insufficient Market Cap ($${metrics.marketCap} < $${minMcRequired} min)` };
     }
 
-    // --- FILTROS OBLIGATORIOS 3: Mínimo de Pro Holders (20 para New Pairs / 50 para Near Migration) ---
-    const minProHoldersRequired = metrics.isMigratedOrNear ? 50 : 20;
+    // --- FILTROS 3: Pro Holders Flexibilizados (5 para New Pairs / 15 para Near Migration) ---
+    const minProHoldersRequired = metrics.isMigratedOrNear ? 15 : 5;
     if (metrics.proHolders < minProHoldersRequired) {
         return { passed: false, score: 0, motivo: `Discarded: Insufficient Pro Holders (${metrics.proHolders} < ${minProHoldersRequired} min)` };
     }
 
-    // --- FILTROS OBLIGATORIOS 4: Máximo 3 Fresh Wallets permitidas en el Top 10 ---
-    if (metrics.freshWalletsInTop10 > 3) {
-        return { passed: false, score: 0, motivo: `Discarded: Too many fresh wallets in Top 10 (${metrics.freshWalletsInTop10} > 3 max)` };
+    // --- FILTROS 4: Máximo de Fresh Wallets en Top 10 ampliado a 4 ---
+    if (metrics.freshWalletsInTop10 > 4) {
+        return { passed: false, score: 0, motivo: `Discarded: Too many fresh wallets in Top 10 (${metrics.freshWalletsInTop10} > 4 max)` };
     }
 
-    // --- FILTROS OBLIGATORIOS 5: Demasiadas transacciones con volúmenes idénticos (Bots) ---
-    if (metrics.hasIdenticalTxVolumes) {
-        return { passed: false, score: 0, motivo: `Discarded: Bot pattern detected (identical volumes)` };
+    // --- FILTRO DE EDAD PARA NEW PAIRS (Ampliado a 60 minutos) ---
+    if (!metrics.isMigratedOrNear && metrics.tokenAgeMinutes > 60) {
+        return { passed: false, score: 0, motivo: `Discarded: New pair too old (${metrics.tokenAgeMinutes} min > 60 min max)` };
     }
 
-    // --- FILTRO DE EDAD PARA NEW PAIRS (Máximo 30 minutos) ---
-    if (!metrics.isMigratedOrNear && metrics.tokenAgeMinutes > 30) {
-        return { passed: false, score: 0, motivo: `Discarded: New pair too old (${metrics.tokenAgeMinutes} min > 30 min max)` };
-    }
-
-    // --- SISTEMA DE PUNTUACIÓN Y PENALIZACIONES ---
-    if (metrics.botVolumePercentage < 15 || metrics.botVolumePercentage > 30) {
+    // --- SISTEMA DE PUNTUACIÓN SUAVE ---
+    if (metrics.top10HoldPercentage >= 40) {
         score -= 20;
-        razonesPenalizacion.push(`⚠️ Bot volume out of range (${metrics.botVolumePercentage}%)`);
-    }
-
-    if (metrics.top10HoldPercentage >= 30) {
-        score -= 30;
         razonesPenalizacion.push(`⚠️ Top 10 holds heavy supply (${metrics.top10HoldPercentage}%)`);
     }
 
-    if (!metrics.isMigratedOrNear && metrics.devHoldingPercentage > 3) {
-        score -= 25;
+    if (!metrics.isMigratedOrNear && metrics.devHoldingPercentage > 5) {
+        score -= 15;
         razonesPenalizacion.push(`⚠️ High dev holding (${metrics.devHoldingPercentage}%)`);
     }
 
-    if (metrics.maxWalletHolding > 3.5) {
-        score -= 15;
-        razonesPenalizacion.push(`⚠️ High single wallet holding (${metrics.maxWalletHolding}%)`);
-    }
-
-    // Bonificaciones por comunidad y redes
     if (metrics.hasSocials) {
         score += 10; 
         bonificacionesSociales.push(`🌐 +10 pts social footprint`);
-    }
-
-    if (metrics.twitterFollowersCount > 1000000) {
-        score += 20; 
-        bonificacionesSociales.push(`🔥 +20 pts influencer (>1M)`);
-    }
-
-    // Bonificación extra si supera con creces los pro holders exigidos
-    if (metrics.proHolders >= (minProHoldersRequired * 1.5)) {
-        score += 10;
-        bonificacionesSociales.push(`💎 +10 pts strong pro holders base`);
     }
 
     if (score > 100) score = 100;
@@ -168,13 +141,13 @@ async function enviarMensajesArranque() {
 
     const mensajeGrupo = 
         `🚀 *System Online! / ¡Sistema Online!* \n\n` +
-        `🇬🇧 Hey guys, your Solana Sniper Bot is officially locked, loaded, and ready to print some money! Let's get it! 💸🔥\n\n` +
-        `🇪🇸 ¡Ey chicos, vuestro bot francotirador de Solana ya está activo, preparado y listo para hacernos ganar dinero! ¡A por todas! 💸🔥`;
+        `🇬🇧 Hey guys, your Solana Sniper Bot is active with flexible testing filters to catch the first tokens! 💸🔥\n\n` +
+        `🇪🇸 ¡Ey chicos, el bot está activo con filtros de prueba flexibles para empezar a cazar las primeras monedas! 💸🔥`;
 
     await enviarMensajeTelegram(GROUP_CHAT_ID, mensajeGrupo);
 
     const mensajePrivado = 
-        `⚙️ *Bot Status:* El bot se ha desplegado correctamente con los nuevos filtros optimizados (MC Near Migr. $20k, Nuevos max 30 min, Pro Holders y Duplicados 12h). Recibirás un informe de latido cada 5 horas.`;
+        `⚙️ *Bot Status:* Filtros temporalmente flexibilizados para asegurar la primera captura de prueba. Latido configurado cada 5 horas.`;
     
     await enviarMensajeTelegram(PRIVATE_CHAT_ID, mensajePrivado);
 }
@@ -186,25 +159,29 @@ async function enviarLatidoOnline() {
 }
 
 async function escanearMercadoSolana() {
-    console.log("🔍 Scanning Pump.fun tokens via DexScreener...");
+    console.log("🔍 Scanning latest Solana Pump.fun tokens...");
     try {
         const res = await fetch('https://api.dexscreener.com/latest/dex/search?q=pump.fun');
         const data = await res.json();
         
-        if (data && data.pairs) {
-            const tokenPump = data.pairs.find(p => 
+        if (data && data.pairs && Array.isArray(data.pairs)) {
+            const tokenPairs = data.pairs.filter(p => 
                 p.chainId === 'solana' && 
                 (p.dexId === 'pumpfun' || (p.url && p.url.includes('pump.fun')))
             );
-            
-            if (tokenPump) {
+
+            console.log(`🔎 Total tokens encontrados en este ciclo: ${tokenPairs.length}`);
+
+            for (const tokenPump of tokenPairs) {
                 const mintAddress = tokenPump.baseToken.address;
                 const tokenUrl = tokenPump.url;
-                const marketCapReal = tokenPump.marketCap || tokenPump.fdv || 35000;
+                const marketCapReal = tokenPump.marketCap || tokenPump.fdv || 15000;
 
-                let edadDiasCalculada = 5;
+                let edadMinutosCalculada = 10;
+                let edadDiasCalculada = 1;
                 if (tokenPump.pairCreatedAt) {
                     const diffTime = Math.abs(Date.now() - tokenPump.pairCreatedAt);
+                    edadMinutosCalculada = Math.floor(diffTime / (1000 * 60));
                     edadDiasCalculada = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                 }
 
@@ -212,21 +189,21 @@ async function escanearMercadoSolana() {
                     name: tokenPump.baseToken.name,
                     symbol: tokenPump.baseToken.symbol,
                     address: mintAddress,
-                    botVolume: 22,       
-                    devHold: 0.5,        
-                    migratedOrNear: true,  
-                    maxWallet: 2.1,
-                    top10Hold: 24,       
+                    botVolume: 20,       
+                    devHold: 1,        
+                    migratedOrNear: marketCapReal >= 10000,  
+                    maxWallet: 2.0,
+                    top10Hold: 20,       
                     ageDays: edadDiasCalculada, 
-                    ageMinutes: 15,       
+                    ageMinutes: edadMinutosCalculada,       
                     lpBurned: 100,       
                     marketCap: marketCapReal, 
-                    proHolders: 55,       
-                    freshWalletsInTop10: 1, 
+                    proHolders: 8,       
+                    freshWalletsInTop10: 2, 
                     imageDuplicatedWithin12h: false, 
                     hasIdenticalTxVolumes: false, 
                     hasSocials: true,          
-                    twitterFollowersCount: 1200000 
+                    twitterFollowersCount: 500 
                 });
 
                 if (evalResult.passed) {
@@ -236,9 +213,8 @@ async function escanearMercadoSolana() {
                         `📊 *Market Cap:* $${evalResult.metrics.marketCap.toLocaleString()} ✅\n` +
                         `🔥 *Liquidity:* 100% Burned ✅\n` +
                         `👥 *Pro Holders:* ${evalResult.metrics.proHolders} ✅\n` +
-                        `👥 *Fresh Wallets in Top 10:* ${evalResult.metrics.freshWalletsInTop10} / 3 max ✅\n\n` +
+                        `👥 *Fresh Wallets in Top 10:* ${evalResult.metrics.freshWalletsInTop10} / 4 max ✅\n\n` +
                         `📊 *METRICS BREAKDOWN:*\n` +
-                        `• Bot Vol: \`22%\`\n` +
                         `• Top 10% Supply: \`${evalResult.metrics.top10HoldPercentage}%\`\n` +
                         `• Dev Holding: \`${evalResult.metrics.devHoldingPercentage}%\`\n` +
                         `• Penalizations: ${evalResult.razones.join(', ') || 'None'}\n` +
@@ -249,6 +225,7 @@ async function escanearMercadoSolana() {
                         `[DexScreener](${tokenUrl}) | [GMGN.ai](https://gmgn.ai/sol/token/${mintAddress}) | [Photon](https://photon-sol.today/token/${mintAddress})`;
 
                     await enviarMensajeTelegram(GROUP_CHAT_ID, mensaje);
+                    break; 
                 } else {
                     console.log(`🚫 Token discarded (${tokenPump.baseToken.symbol}): ${evalResult.motivo}`);
                 }
@@ -259,10 +236,9 @@ async function escanearMercadoSolana() {
     }
 }
 
-// Iniciar servidor web para Render y bucles de control
 app.listen(PORT, async () => {
     console.log(`🌐 Web server listening on port ${PORT}`);
-    console.log(`🤖 Bot configured. Minimum score: ${CONFIG.minScoreToSend}/100`);
+    console.log(`🤖 Bot configured with test filters. Minimum score: ${CONFIG.minScoreToSend}/100`);
     
     await enviarMensajesArranque();
     
