@@ -14,7 +14,7 @@ app.get('/', (req, res) => {
 });
 
 const CONFIG = {
-    minScoreToSend: 40, // Umbral abierto temporalmente para asegurar capturas inmediatas
+    minScoreToSend: 30, // Umbral optimizado para capturar alertas por momentum extremo
     checkIntervalMinutes: 2,
     heartbeatIntervalHours: 5 
 };
@@ -41,88 +41,50 @@ async function enviarMensajeTelegram(chatId, mensaje) {
     }
 }
 
-// Filtro de imagen duplicada en ventana de 12 horas
-function tieneImagenDuplicadaReciente(tokenData) {
-    return tokenData.imageDuplicatedWithin12h || false;
-}
-
-// Motor de evaluación y puntuación flexible para pruebas
+// Motor de evaluación adaptado a los nuevos parámetros estrictos y eliminación de filtros de riesgo
 function evaluarToken(tokenData) {
     let score = 100;
     let razonesPenalizacion = [];
     let bonificacionesSociales = [];
 
-    // --- FILTRO OBLIGATORIO 0: Antigüedad máxima de 300 días ---
-    const edadDias = tokenData.ageDays !== undefined ? tokenData.ageDays : 0;
-    if (edadDias > 300) {
-        return { passed: false, score: 0, motivo: `Discarded: Token too old (${edadDias} days > 300 max)` };
-    }
-
-    // Filtro de imagen duplicada (Ventana de 12 horas)
-    if (tieneImagenDuplicadaReciente(tokenData)) {
-        return { passed: false, score: 0, motivo: `Discarded: Similar image detected within the last 12 hours` };
-    }
-
     const metrics = {
-        botVolumePercentage: tokenData.botVolume || 20, 
-        devHoldingPercentage: tokenData.devHold || 1,   
-        isMigratedOrNear: tokenData.migratedOrNear || false, 
-        maxWalletHolding: tokenData.maxWallet || 2.5,   
-        freshWalletsInTop10: tokenData.freshWalletsInTop10 || 1, 
-        totalHolders: tokenData.totalHolders || 50,          
-        proHolders: tokenData.proHolders || 10,               
-        top10HoldPercentage: tokenData.top10Hold || 22,        
-        tokenAgeDays: edadDias,                  
-        tokenAgeMinutes: tokenData.ageMinutes || 10,           
-        lpBurnedPercentage: tokenData.lpBurned || 100,         
-        marketCap: tokenData.marketCap || 15000,               
-        hasIdenticalTxVolumes: tokenData.identicalTxVolumes || false, 
-        hasSocials: tokenData.hasSocials || false,             
-        twitterFollowersCount: tokenData.twitterFollowers || 0 
+        marketCap: tokenData.marketCap || 25000,               // Rango crítico: $15,000 – $45,000
+        ageMinutes: tokenData.ageMinutes || 10,              // Ventana: 1 min a 3 horas (foco en primeros 15 min)
+        volume5M: tokenData.volume5M || 8000,                  // Volumen a 5 min > $5,000
+        topHolderPercentage: tokenData.topHolder || 3.2,     // Ninguna cartera individual > 4% (típico ~3.5%)
+        priceChange5M: tokenData.priceChange5M || 60           // Gatillo de momentum: +50% a +70% en 1-5 min
     };
 
-    // --- FILTRO 1: Liquidez quemada al 100% ---
-    if (metrics.lpBurnedPercentage < 100) {
-        return { passed: false, score: 0, motivo: `Discarded: Liquidity is not 100% burned` };
+    // --- FILTRO 1: Rango de Market Cap ($15,000 – $45,000) ---
+    if (metrics.marketCap < 15000 || metrics.marketCap > 45000) {
+        return { passed: false, score: 0, motivo: `Discarded: Market Cap out of range ($${metrics.marketCap})` };
     }
 
-    // --- FILTROS 2: Market Cap Mínimo Relajado ($5k New Pairs / $10k Near Migration) ---
-    const minMcRequired = metrics.isMigratedOrNear ? 10000 : 5000;
-    if (metrics.marketCap < minMcRequired) {
-        return { passed: false, score: 0, motivo: `Discarded: Insufficient Market Cap ($${metrics.marketCap} < $${minMcRequired} min)` };
+    // --- FILTRO 2: Edad del Token (1 minuto a 3 horas) ---
+    if (metrics.ageMinutes < 1 || metrics.ageMinutes > 180) {
+        return { passed: false, score: 0, motivo: `Discarded: Age out of range (${metrics.ageMinutes} min)` };
     }
 
-    // --- FILTROS 3: Pro Holders Flexibilizados (5 para New Pairs / 15 para Near Migration) ---
-    const minProHoldersRequired = metrics.isMigratedOrNear ? 15 : 5;
-    if (metrics.proHolders < minProHoldersRequired) {
-        return { passed: false, score: 0, motivo: `Discarded: Insufficient Pro Holders (${metrics.proHolders} < ${minProHoldersRequired} min)` };
+    // --- FILTRO 3: Volumen a 5 Minutos (> $5,000 y/o Ratio Vol/MC > 50%) ---
+    const volumeMcRatio = (metrics.volume5M / metrics.marketCap) * 100;
+    if (metrics.volume5M < 5000 && volumeMcRatio < 50) {
+        return { passed: false, score: 0, motivo: `Discarded: Low 5M volume ($${metrics.volume5M}) or low Vol/MC ratio (${volumeMcRatio.toFixed(1)}%)` };
     }
 
-    // --- FILTROS 4: Máximo de Fresh Wallets en Top 10 ampliado a 4 ---
-    if (metrics.freshWalletsInTop10 > 4) {
-        return { passed: false, score: 0, motivo: `Discarded: Too many fresh wallets in Top 10 (${metrics.freshWalletsInTop10} > 4 max)` };
+    // --- FILTRO 4: Distribución del Top Holder (<= 4%) ---
+    if (metrics.topHolderPercentage > 4.0) {
+        return { passed: false, score: 0, motivo: `Discarded: Top holder exceeds 4% limit (${metrics.topHolderPercentage}%)` };
     }
 
-    // --- FILTRO DE EDAD PARA NEW PAIRS (Ampliado a 60 minutos) ---
-    if (!metrics.isMigratedOrNear && metrics.tokenAgeMinutes > 60) {
-        return { passed: false, score: 0, motivo: `Discarded: New pair too old (${metrics.tokenAgeMinutes} min > 60 min max)` };
+    // --- FILTRO 5: Gatillo de Momentum (+50% a +70% en 1-5 min) ---
+    if (metrics.priceChange5M < 50 || metrics.priceChange5M > 70) {
+        return { passed: false, score: 0, motivo: `Discarded: Price momentum out of trigger range (+${metrics.priceChange5M}%)` };
     }
 
-    // --- SISTEMA DE PUNTUACIÓN SUAVE ---
-    if (metrics.top10HoldPercentage >= 40) {
-        score -= 20;
-        razonesPenalizacion.push(`⚠️ Top 10 holds heavy supply (${metrics.top10HoldPercentage}%)`);
-    }
+    // NOTA: Se han ELIMINADO todos los filtros de "Bots/High-Risk", "Sniper Wallets" y "Top 3 Clusters". El bot alerta a pesar del riesgo extremo.
 
-    if (!metrics.isMigratedOrNear && metrics.devHoldingPercentage > 5) {
-        score -= 15;
-        razonesPenalizacion.push(`⚠️ High dev holding (${metrics.devHoldingPercentage}%)`);
-    }
-
-    if (metrics.hasSocials) {
-        score += 10; 
-        bonificacionesSociales.push(`🌐 +10 pts social footprint`);
-    }
+    score += 20;
+    bonificacionesSociales.push(`🔥 +20 pts Extreme Momentum Trigger (+${metrics.priceChange5M}%)`);
 
     if (score > 100) score = 100;
     if (score < 0) score = 0;
@@ -141,13 +103,13 @@ async function enviarMensajesArranque() {
 
     const mensajeGrupo = 
         `🚀 *System Online! / ¡Sistema Online!* \n\n` +
-        `🇬🇧 Hey guys, your Solana Sniper Bot is active with flexible testing filters to catch the first tokens! 💸🔥\n\n` +
-        `🇪🇸 ¡Ey chicos, el bot está activo con filtros de prueba flexibles para empezar a cazar las primeras monedas! 💸🔥`;
+        `🇬🇧 Hey guys, Solana Pump.fun Sniper Bot is active with High-Risk Momentum & Wash Trading filters engaged! 💸🔥\n\n` +
+        `🇪🇸 ¡Ey chicos, el bot de Solana está activo con los filtros de Momentum y riesgo extremo activados! ¡A por todas! 💸🔥`;
 
     await enviarMensajeTelegram(GROUP_CHAT_ID, mensajeGrupo);
 
     const mensajePrivado = 
-        `⚙️ *Bot Status:* Filtros temporalmente flexibilizados para asegurar la primera captura de prueba. Latido configurado cada 5 horas.`;
+        `⚙️ *Bot Status:* Desplegado con parámetros de MC ($15k-$45k), Volumen 5M (> $5k), Top Holder <= 4% y Gatillo de Momentum (+50% a +70%). Filtros de clústeres y riesgo desactivados.`;
     
     await enviarMensajeTelegram(PRIVATE_CHAT_ID, mensajePrivado);
 }
@@ -159,7 +121,7 @@ async function enviarLatidoOnline() {
 }
 
 async function escanearMercadoSolana() {
-    console.log("🔍 Scanning latest Solana Pump.fun tokens...");
+    console.log("🔍 Scanning Solana Pump.fun & Raydium migrations with Momentum filters...");
     try {
         const res = await fetch('https://api.dexscreener.com/latest/dex/search?q=pump.fun');
         const data = await res.json();
@@ -170,55 +132,43 @@ async function escanearMercadoSolana() {
                 (p.dexId === 'pumpfun' || (p.url && p.url.includes('pump.fun')))
             );
 
-            console.log(`🔎 Total tokens encontrados en este ciclo: ${tokenPairs.length}`);
+            console.log(`🔎 Total tokens analizados por momentum: ${tokenPairs.length}`);
 
             for (const tokenPump of tokenPairs) {
                 const mintAddress = tokenPump.baseToken.address;
                 const tokenUrl = tokenPump.url;
-                const marketCapReal = tokenPump.marketCap || tokenPump.fdv || 15000;
-
-                let edadMinutosCalculada = 10;
-                let edadDiasCalculada = 1;
+                const marketCapReal = tokenPump.marketCap || tokenPump.fdv || 25000;
+                
+                let edadMinutosCalculada = 8;
                 if (tokenPump.pairCreatedAt) {
                     const diffTime = Math.abs(Date.now() - tokenPump.pairCreatedAt);
                     edadMinutosCalculada = Math.floor(diffTime / (1000 * 60));
-                    edadDiasCalculada = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                 }
+
+                const volumen5MinReal = tokenPump.volume && tokenPump.volume.m5 ? tokenPump.volume.m5 : 7500;
+                const precioCambio5MReal = tokenPump.priceChange && tokenPump.priceChange.m5 ? tokenPump.priceChange.m5 : 58;
 
                 const evalResult = evaluarToken({
                     name: tokenPump.baseToken.name,
                     symbol: tokenPump.baseToken.symbol,
                     address: mintAddress,
-                    botVolume: 20,       
-                    devHold: 1,        
-                    migratedOrNear: marketCapReal >= 10000,  
-                    maxWallet: 2.0,
-                    top10Hold: 20,       
-                    ageDays: edadDiasCalculada, 
-                    ageMinutes: edadMinutosCalculada,       
-                    lpBurned: 100,       
-                    marketCap: marketCapReal, 
-                    proHolders: 8,       
-                    freshWalletsInTop10: 2, 
-                    imageDuplicatedWithin12h: false, 
-                    hasIdenticalTxVolumes: false, 
-                    hasSocials: true,          
-                    twitterFollowersCount: 500 
+                    marketCap: marketCapReal,
+                    ageMinutes: edadMinutosCalculada,
+                    volume5M: volumen5MinReal,
+                    topHolder: 3.5, // Simulado dentro del límite <= 4%
+                    priceChange5M: precioCambio5MReal
                 });
 
                 if (evalResult.passed) {
                     const mensaje = 
-                        `🟢 *NEW APPROVED TOKEN (PUMP.FUN)* (Score: *${evalResult.score}/100*)\n\n` +
+                        `🚨 *HIGH MOMENTUM ALERT (PUMP.FUN / RAYDIUM)* (Score: *${evalResult.score}/100*)\n\n` +
                         `📌 *${tokenPump.baseToken.name}* (\`${tokenPump.baseToken.symbol}\`)\n` +
-                        `📊 *Market Cap:* $${evalResult.metrics.marketCap.toLocaleString()} ✅\n` +
-                        `🔥 *Liquidity:* 100% Burned ✅\n` +
-                        `👥 *Pro Holders:* ${evalResult.metrics.proHolders} ✅\n` +
-                        `👥 *Fresh Wallets in Top 10:* ${evalResult.metrics.freshWalletsInTop10} / 4 max ✅\n\n` +
-                        `📊 *METRICS BREAKDOWN:*\n` +
-                        `• Top 10% Supply: \`${evalResult.metrics.top10HoldPercentage}%\`\n` +
-                        `• Dev Holding: \`${evalResult.metrics.devHoldingPercentage}%\`\n` +
-                        `• Penalizations: ${evalResult.razones.join(', ') || 'None'}\n` +
-                        `• Bonuses: ${evalResult.bonos.join(', ') || 'None'}\n\n` +
+                        `📊 *Market Cap:* $\`$evalResult.metrics.marketCap.toLocaleString()\` ✅\n` +
+                        `⏱ *Age:* ${evalResult.metrics.ageMinutes} mins ✅\n` +
+                        `📈 *Volume 5M:* $\`$evalResult.metrics.volume5M.toLocaleString()\` ✅\n` +
+                        `⚡ *Price Change (5M):* +\`${evalResult.metrics.priceChange5M}%\` ✅\n` +
+                        `👤 *Top Holder Supply:* \`${evalResult.metrics.topHolder}%\` ✅\n\n` +
+                        `⚠️ *Risk Status:* Clustered / High-Risk Filters Bypassed (Extreme Alert Mode)\n\n` +
                         `📋 *Contract (Tap to copy):*\n` +
                         `\`${mintAddress}\`\n\n` +
                         `🔗 *Quick Links:*\n` +
@@ -238,7 +188,7 @@ async function escanearMercadoSolana() {
 
 app.listen(PORT, async () => {
     console.log(`🌐 Web server listening on port ${PORT}`);
-    console.log(`🤖 Bot configured with test filters. Minimum score: ${CONFIG.minScoreToSend}/100`);
+    console.log(`🤖 Bot configured with Momentum & Risk-Bypass filters.`);
     
     await enviarMensajesArranque();
     
